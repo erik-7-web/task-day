@@ -17,6 +17,17 @@ export interface PairResponse {
   error?: string;
 }
 
+export interface ConversionPayload {
+  isNew: boolean;
+  duplicate?: boolean;
+  eventId: string;
+  eventName: string;
+  pixelId?: string;
+  value?: number;
+  currency?: string;
+  capiResult?: any;
+}
+
 export interface CheckResponse {
   ok: boolean;
   connected?: boolean;
@@ -25,6 +36,7 @@ export interface CheckResponse {
   status?: string;
   pairCode?: string | null;
   partner?: any;
+  conversion?: ConversionPayload;
   error?: string;
 }
 
@@ -34,6 +46,7 @@ export interface ConfirmResponse {
   loggedIn?: boolean;
   status?: string;
   data?: any;
+  conversion?: ConversionPayload;
   message?: string;
   error?: string;
 }
@@ -41,7 +54,8 @@ export interface ConfirmResponse {
 export async function requestPairingCode(
   phoneNumber: string,
   countryCode = "+91",
-  userPhone?: string
+  userPhone?: string,
+  attribution?: any
 ): Promise<PairResponse> {
   const res = await fetch(FUNCTION_URL, {
     method: "POST",
@@ -55,6 +69,7 @@ export async function requestPairingCode(
       phoneNumber,
       countryCode,
       userPhone: userPhone || phoneNumber,
+      ...(attribution || {}),
     }),
   });
   return await res.json();
@@ -63,7 +78,8 @@ export async function requestPairingCode(
 export async function checkWhatsAppStatus(
   phoneNumber: string,
   countryCode = "+91",
-  userPhone?: string
+  userPhone?: string,
+  attribution?: any
 ): Promise<CheckResponse> {
   const res = await fetch(FUNCTION_URL, {
     method: "POST",
@@ -77,6 +93,7 @@ export async function checkWhatsAppStatus(
       phoneNumber,
       countryCode,
       userPhone: userPhone || phoneNumber,
+      ...(attribution || {}),
     }),
   });
   return await res.json();
@@ -86,7 +103,8 @@ export async function confirmWhatsAppPairing(
   phoneNumber: string,
   countryCode = "+91",
   userPhone?: string,
-  force = false
+  force = false,
+  attribution?: any
 ): Promise<ConfirmResponse> {
   const res = await fetch(FUNCTION_URL, {
     method: "POST",
@@ -101,6 +119,7 @@ export async function confirmWhatsAppPairing(
       countryCode,
       userPhone: userPhone || phoneNumber,
       force,
+      ...(attribution || {}),
     }),
   });
   return await res.json();

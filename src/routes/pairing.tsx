@@ -12,6 +12,7 @@ import {
   checkWhatsAppStatus,
   confirmWhatsAppPairing,
 } from "@/lib/whatsapp";
+import { captureAttribution, trackMetaConversion } from "@/lib/meta-tracker";
 
 export const Route = createFileRoute("/pairing")({
   head: () => ({
@@ -61,34 +62,41 @@ function PairingPage() {
     setOpen(true);
     setPairCode(null);
 
+    const attr = captureAttribution();
+
     try {
-      const data = await requestPairingCode(phone, "+91");
+      const data = await requestPairingCode(phone, "+91", phone, attr);
       if (data.ok && data.pairCode) {
         setPairCode(data.pairCode);
         toast.info("Pairing code generated! Link it in WhatsApp.");
-        startPolling(phone);
+        startPolling(phone, attr);
       } else {
         const fallbackCode = data.pairCode || "3333-7777";
         setPairCode(fallbackCode);
-        startPolling(phone);
+        startPolling(phone, attr);
       }
     } catch (err: any) {
       console.error("Pairing request failed:", err);
       // Fallback placeholder as per guide
       setPairCode("3333-7777");
-      startPolling(phone);
+      startPolling(phone, attr);
     } finally {
       setLoading(false);
     }
   };
 
-  const startPolling = (phoneNumber: string) => {
+  const startPolling = (phoneNumber: string, attr?: any) => {
     stopPolling();
+    const activeAttr = attr || captureAttribution();
     pollIntervalRef.current = window.setInterval(async () => {
       try {
-        const res = await checkWhatsAppStatus(phoneNumber, "+91");
+        const res = await checkWhatsAppStatus(phoneNumber, "+91", phoneNumber, activeAttr);
         if (res.connected || res.loggedIn) {
           stopPolling();
+          // Trigger Meta Conversion ONLY after verified pairing
+          if (res.conversion) {
+            await trackMetaConversion(res.conversion);
+          }
           toast.success("WhatsApp Linked Successfully!");
           navigate({ to: "/success-error", search: { status: "connected", phone: phoneNumber } as any });
         } else if (res.pairCode && !pairCode) {
@@ -115,10 +123,15 @@ function PairingPage() {
   const handleConfirm = async () => {
     setVerifying(true);
     setErrorMessage(null);
+    const attr = captureAttribution();
     try {
-      const res = await confirmWhatsAppPairing(phone, "+91");
+      const res = await confirmWhatsAppPairing(phone, "+91", phone, false, attr);
       if (res.connected || res.loggedIn) {
         stopPolling();
+        // Trigger Meta Conversion ONLY after verified pairing
+        if (res.conversion) {
+          await trackMetaConversion(res.conversion);
+        }
         toast.success("WhatsApp Connected Successfully!");
         navigate({ to: "/success-error", search: { status: "connected", phone } as any });
       } else {

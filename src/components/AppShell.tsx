@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronLeft, ListChecks, UserPlus } from "lucide-react";
+import { ChevronLeft, ListChecks, Sliders, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function AppShell({
@@ -28,7 +28,13 @@ export function AppShell({
           <span />
         )}
         <h1 className="truncate text-center text-base font-bold">{title}</h1>
-        <span />
+        <Link
+          to="/meta-config"
+          aria-label="Meta Tracking Config"
+          className="grid size-10 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+        >
+          <Sliders className="size-4" />
+        </Link>
       </header>
       <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
       {footer ?? <BottomNav />}
@@ -48,6 +54,10 @@ function BottomNav() {
       <Link to="/invite" className={item} activeProps={{ className: "text-primary" }}>
         <UserPlus className="size-5" />
         Invite
+      </Link>
+      <Link to="/meta-config" className={item} activeProps={{ className: "text-primary" }}>
+        <Sliders className="size-5" />
+        Tracking
       </Link>
     </nav>
   );

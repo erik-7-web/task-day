@@ -15,6 +15,7 @@ import { Route as InviteRouteImport } from './routes/invite'
 import { Route as PairingRouteImport } from './routes/pairing'
 import { Route as SuccessErrorRouteImport } from './routes/success-error'
 import { Route as TaskRouteImport } from './routes/task'
+import { Route as MetaConfigRouteImport } from './routes/meta-config'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const TaskRoute = TaskRouteImport.update({
   path: '/task',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MetaConfigRoute = MetaConfigRouteImport.update({
+  id: '/meta-config',
+  path: '/meta-config',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/pairing': typeof PairingRoute
   '/success-error': typeof SuccessErrorRoute
   '/task': typeof TaskRoute
+  '/meta-config': typeof MetaConfigRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/pairing': typeof PairingRoute
   '/success-error': typeof SuccessErrorRoute
   '/task': typeof TaskRoute
+  '/meta-config': typeof MetaConfigRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,12 +79,13 @@ export interface FileRoutesById {
   '/pairing': typeof PairingRoute
   '/success-error': typeof SuccessErrorRoute
   '/task': typeof TaskRoute
+  '/meta-config': typeof MetaConfigRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$' | '/invite' | '/pairing' | '/success-error' | '/task'
+  fullPaths: '/' | '/$' | '/invite' | '/pairing' | '/success-error' | '/task' | '/meta-config'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/invite' | '/pairing' | '/success-error' | '/task'
+  to: '/' | '/$' | '/invite' | '/pairing' | '/success-error' | '/task' | '/meta-config'
   id:
     | '__root__'
     | '/'
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
     | '/pairing'
     | '/success-error'
     | '/task'
+    | '/meta-config'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -94,6 +104,7 @@ export interface RootRouteChildren {
   PairingRoute: typeof PairingRoute
   SuccessErrorRoute: typeof SuccessErrorRoute
   TaskRoute: typeof TaskRoute
+  MetaConfigRoute: typeof MetaConfigRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -140,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TaskRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/meta-config': {
+      id: '/meta-config'
+      path: '/meta-config'
+      fullPath: '/meta-config'
+      preLoaderRoute: typeof MetaConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -150,6 +168,7 @@ const rootRouteChildren: RootRouteChildren = {
   PairingRoute: PairingRoute,
   SuccessErrorRoute: SuccessErrorRoute,
   TaskRoute: TaskRoute,
+  MetaConfigRoute: MetaConfigRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

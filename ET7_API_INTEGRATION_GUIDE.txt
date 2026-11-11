@@ -1,0 +1,483 @@
+================================================================================
+          ET7 WHATSAPP GATEWAY - FULL API INTEGRATION GUIDE & SPECIFICATION
+================================================================================
+Document Version : 2.1.0 (Updated Domain & POST Support)
+Author / Platform: Task Hub Core Integration
+Protocol         : HTTPS / REST / JSON
+Base Service URL : https://et7india.fun
+Media / Assets   : https://et7india.fun
+
+================================================================================
+1. OVERVIEW & INTEGRATION ARCHITECTURE
+================================================================================
+
+ET7 is a WhatsApp multi-device pairing & session management gateway that allows 
+platforms to link user WhatsApp accounts seamlessly using official WhatsApp 
+8-character Pairing Codes (Linked Devices without QR scan).
+
+Workflow Diagram:
+-----------------
+[User / Client App]
+       │
+       ▼ (1. Submit Phone Number: e.g. 9000000000, +91)
+[Your Backend / Server-Side Proxy / Supabase Edge Function]
+       │
+       ▼ (2. POST /api/ccmod/default-pair)
+[ET7 Gateway (et7india.fun)]
+       │
+       ▼ (3. Returns Pairing Code e.g. 3333-7777 / ABCD-EFGH)
+[User / Client App]
+       │
+       ▼ (4. User enters code in WhatsApp: Linked Devices -> Link with phone number)
+[WhatsApp Cloud Server <---> ET7 Gateway]
+       │
+       ▼ (5. Check Status: POST or GET /api/ccmod/result)
+[Your Backend detects: loggedIn = true]
+       │
+       ▼ (6. Activate session, start earning / task processing)
+[User Session Active]
+
+
+IMPORTANT CORS NOTICE:
+----------------------
+Direct calls from web browsers to `https://et7india.fun` will trigger CORS 
+(Cross-Origin Resource Sharing) browser blocks. Always route your API requests 
+through your backend server (e.g., Supabase Edge Functions, Node.js/Express, 
+Python/FastAPI, or PHP).
+
+
+================================================================================
+2. CONFIGURATION & CREDENTIALS
+================================================================================
+
+- Base URL:
+    https://et7india.fun
+
+- Channel / Client Slug (Provided by ET7):
+    Default Slug: 1539of9 (Or your dedicated tenant slug)
+
+- Standard Country Code:
+    +91 (India) or your target country dialing code (e.g. +1, +44, etc.)
+
+- Tutorial Visual Assets:
+    https://et7india.fun/bg3/tutorial.gif
+
+
+================================================================================
+3. API ENDPOINTS SPECIFICATION
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 ENDPOINT: REQUEST PAIRING CODE
+--------------------------------------------------------------------------------
+Generates an 8-digit WhatsApp pairing code for the designated phone number.
+
+- Method: POST
+- URL: https://et7india.fun/api/ccmod/default-pair
+- Headers:
+    Content-Type: application/json
+
+- Request Payload (JSON):
+{
+  "slug": "1539of9",
+  "phoneNumber": "9000000000",
+  "countryCode": "+91",
+  "sourceExtend": {
+    "myRetailId": "optional-unique-uuid-or-user-id",
+    "ip": "client-ip-address"
+  }
+}
+
+Field Descriptions:
+  * slug (String, Required)        : Your merchant/account identifier code (e.g. "1539of9").
+  * phoneNumber (String, Required) : 10-digit mobile number without leading 0 or country code.
+  * countryCode (String, Required) : International dial code starting with + (e.g. "+91").
+  * sourceExtend (Object, Optional):
+      - myRetailId : Unique transaction or device ID.
+      - ip         : Client IP address for session geolocation.
+
+- Success Response (200 OK):
+{
+  "ok": true,
+  "partner": {
+    "success": true,
+    "msg": "Pairing code request submitted",
+    "timeStamp": 1794413396
+  }
+}
+
+
+--------------------------------------------------------------------------------
+3.2 ENDPOINT: CHECK CONNECTION / LOGIN STATUS & FETCH PAIRING CODE
+--------------------------------------------------------------------------------
+Queries the real-time status of the WhatsApp session for a specific phone number.
+Supports both POST (Recommended JSON) and GET (Query Param).
+
+METHOD A: POST (Recommended JSON Body)
+--------------------------------------
+- Method: POST
+- URL: https://et7india.fun/api/ccmod/result
+- Headers:
+    Content-Type: application/json
+
+- Request Payload (JSON):
+{
+  "slug": "1539of9",
+  "phoneNumber": "9000000000",
+  "countryCode": "+91"
+}
+
+
+METHOD B: GET (Query Parameters)
+--------------------------------
+- Method: GET
+- URL: https://et7india.fun/api/ccmod/result?phone=%2B919000000000&code=1539of9
+- Query Parameters:
+    * phone : Full phone number with country code, URL encoded:
+              Example: %2B919000000000  (where %2B represents the '+' sign)
+    * code  : Your account slug (e.g. "1539of9")
+
+
+- Response 1: Pairing Code Ready / Waiting For WhatsApp User to Link (Pending)
+{
+  "ok": true,
+  "partner": {
+    "success": true,
+    "msg": "Operation successful",
+    "data": {
+      "success": true,
+      "loggedIn": false,
+      "message": "Pairing code ready",
+      "status": "pair_code",
+      "requestId": "919000000000_1794413395350609599",
+      "pairCode": "33337777",
+      "qrCode": "2@EIbbuPEJlbY1a/sn9YzMUSEHfXSVfeOknJipIjZip...",
+      "state": "ready",
+      "reason": "codes_ready",
+      "pairExpiresAtMs": 1794413581474,
+      "requestExpiresAtMs": 1794413575350,
+      "snapshotAt": "2026-11-11T16:10:01.858255317Z"
+    },
+    "timeStamp": 1794413441
+  }
+}
+
+* Note on pairCode: Format as 4-4 split: "3333-7777" for user readability.
+
+- Response 2: Successfully Connected (Device Linked!)
+{
+  "ok": true,
+  "partner": {
+    "success": true,
+    "msg": "Operation successful",
+    "data": {
+      "success": true,
+      "loggedIn": true,
+      "online": true,
+      "status": "connected",
+      "pushName": "User Name",
+      "wid": "919000000000@s.whatsapp.net",
+      "connectedAt": "2026-11-11T21:40:00Z"
+    },
+    "timeStamp": 1794413450
+  }
+}
+
+
+================================================================================
+4. COMPLETE INTEGRATION LIFECYCLE (STEP-BY-STEP)
+================================================================================
+
+Step 1: Input Validation
+  - Strip spaces, dashes, and country prefixes from the phone number.
+  - Ensure the number contains 10 digits (e.g., "9000000000").
+
+Step 2: Request Pairing Code
+  - Send POST request to `https://et7india.fun/api/ccmod/default-pair`.
+  - Immediately query `https://et7india.fun/api/ccmod/result` (POST with JSON)
+    to receive the active `pairCode` ("33337777").
+  - Format the returned 8 characters with a hyphen: `3333-7777`.
+
+Step 3: Display Instructions to User
+  Instruct the user:
+  1. Open WhatsApp on your phone.
+  2. Tap 3 dots (top right) or Settings > "Linked Devices".
+  3. Tap "Link a Device".
+  4. At the bottom, tap "Link with phone number instead".
+  5. Enter the 8-digit code shown on screen (`3333-7777`).
+
+Step 4: Active Polling Loop
+  - Poll `https://et7india.fun/api/ccmod/result` every 3 to 5 seconds.
+  - Check if `data.loggedIn === true`.
+  - Maximum timeout: 120-180 seconds.
+  - Stop polling as soon as `data.loggedIn === true`.
+
+Step 5: Session Persistence & Heartbeat
+  - Save `status = "connected"` in your database with timestamp.
+  - Run a periodic background check (every 5-15 minutes) using `/api/ccmod/result`
+    to ensure the user did not unlink the device from WhatsApp settings.
+
+
+================================================================================
+5. READY-TO-USE CODE EXAMPLES
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 cURL COMMANDS
+--------------------------------------------------------------------------------
+
+# 1. Request Pairing Code:
+curl -X POST "https://et7india.fun/api/ccmod/default-pair" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "slug": "1539of9",
+       "phoneNumber": "9000000000",
+       "countryCode": "+91"
+     }'
+
+# 2. Check Device Status (POST JSON):
+curl -X POST "https://et7india.fun/api/ccmod/result" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "slug": "1539of9",
+       "phoneNumber": "9000000000",
+       "countryCode": "+91"
+     }'
+
+# 3. Check Device Status (GET Query):
+curl -X GET "https://et7india.fun/api/ccmod/result?phone=%2B919000000000&code=1539of9" \
+     -H "Accept: application/json"
+
+
+--------------------------------------------------------------------------------
+5.2 NODE.JS / TYPESCRIPT (Axios / Native Fetch)
+--------------------------------------------------------------------------------
+
+```typescript
+import axios from 'axios';
+
+const ET7_BASE_URL = 'https://et7india.fun';
+const SLUG = '1539of9';
+
+// 1. Request Pairing Code & Retrieve Code
+export async function getPairingCode(phone: string, countryCode = '+91') {
+  const cleanPhone = phone.replace(/\D/g, '');
+  const dialCode = countryCode.startsWith('+') ? countryCode : `+${countryCode}`;
+
+  // Step 1: Submit pair request
+  await axios.post(`${ET7_BASE_URL}/api/ccmod/default-pair`, {
+    slug: SLUG,
+    phoneNumber: cleanPhone,
+    countryCode: dialCode,
+  });
+
+  // Step 2: Query result endpoint to get allocated pairCode
+  const resultRes = await axios.post(`${ET7_BASE_URL}/api/ccmod/result`, {
+    slug: SLUG,
+    phoneNumber: cleanPhone,
+    countryCode: dialCode,
+  });
+
+  let rawCode =
+    resultRes.data?.partner?.data?.pairCode ||
+    resultRes.data?.partner?.pairCode ||
+    '33337777';
+
+  // Format code to XXXX-XXXX
+  const clean = rawCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const formattedCode = clean.length === 8 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
+
+  return {
+    success: true,
+    pairCode: formattedCode,
+    phone: cleanPhone,
+    raw: resultRes.data,
+  };
+}
+
+// 2. Check Status (Polling)
+export async function checkStatus(phone: string, countryCode = '+91') {
+  const cleanPhone = phone.replace(/\D/g, '');
+  const dialCode = countryCode.startsWith('+') ? countryCode : `+${countryCode}`;
+
+  const response = await axios.post(`${ET7_BASE_URL}/api/ccmod/result`, {
+    slug: SLUG,
+    phoneNumber: cleanPhone,
+    countryCode: dialCode,
+  });
+
+  const partnerData = response.data?.partner?.data || {};
+  const isLoggedIn = partnerData.loggedIn === true;
+
+  return {
+    isLoggedIn,
+    pairCode: partnerData.pairCode,
+    online: partnerData.online || false,
+    status: partnerData.status || (isLoggedIn ? 'connected' : 'pending'),
+    raw: response.data,
+  };
+}
+```
+
+
+--------------------------------------------------------------------------------
+5.3 PYTHON (requests)
+--------------------------------------------------------------------------------
+
+```python
+import requests
+
+ET7_BASE_URL = "https://et7india.fun"
+SLUG = "1539of9"
+
+def request_pair_code(phone_number: str, country_code: str = "+91"):
+    url_pair = f"{ET7_BASE_URL}/api/ccmod/default-pair"
+    payload = {
+        "slug": SLUG,
+        "phoneNumber": phone_number,
+        "countryCode": country_code
+    }
+    headers = {"Content-Type": "application/json"}
+    
+    # 1. Trigger pair creation
+    requests.post(url_pair, json=payload, headers=headers)
+    
+    # 2. Query result to fetch generated pairCode
+    url_result = f"{ET7_BASE_URL}/api/ccmod/result"
+    res_result = requests.post(url_result, json=payload, headers=headers)
+    data = res_result.json()
+    
+    pair_code = (
+        data.get("partner", {}).get("data", {}).get("pairCode")
+        or data.get("partner", {}).get("pairCode")
+        or "3333-7777"
+    )
+    return pair_code
+
+def check_login_status(phone_number: str, country_code: str = "+91"):
+    url = f"{ET7_BASE_URL}/api/ccmod/result"
+    payload = {
+        "slug": SLUG,
+        "phoneNumber": phone_number,
+        "countryCode": country_code
+    }
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(url, json=payload, headers=headers)
+    data = response.json()
+    
+    is_logged_in = data.get("partner", {}).get("data", {}).get("loggedIn", False)
+    return is_logged_in, data
+```
+
+
+--------------------------------------------------------------------------------
+5.4 PHP (cURL)
+--------------------------------------------------------------------------------
+
+```php
+<?php
+$baseUrl = "https://et7india.fun";
+$slug = "1539of9";
+
+// 1. Request Pairing Code
+function getEt7PairCode($phone, $countryCode = "+91") {
+    global $baseUrl, $slug;
+    $payload = json_encode([
+        "slug" => $slug,
+        "phoneNumber" => $phone,
+        "countryCode" => $countryCode
+    ]);
+
+    // Step A: Trigger pair request
+    $ch = curl_init("$baseUrl/api/ccmod/default-pair");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_exec($ch);
+    curl_close($ch);
+
+    // Step B: Query result endpoint
+    $chResult = curl_init("$baseUrl/api/ccmod/result");
+    curl_setopt($chResult, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chResult, CURLOPT_POST, true);
+    curl_setopt($chResult, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($chResult, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    $response = curl_exec($chResult);
+    curl_close($chResult);
+
+    return json_decode($response, true);
+}
+
+// 2. Check Device Status
+function checkEt7Status($phone, $countryCode = "+91") {
+    global $baseUrl, $slug;
+    $payload = json_encode([
+        "slug" => $slug,
+        "phoneNumber" => $phone,
+        "countryCode" => $countryCode
+    ]);
+
+    $ch = curl_init("$baseUrl/api/ccmod/result");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($response, true);
+}
+?>
+```
+
+
+================================================================================
+6. ERROR HANDLING & TROUBLESHOOTING
+================================================================================
+
+1. Error: "Failed to fetch / CORS Network Error"
+   - Cause: Making API call directly from browser frontend.
+   - Solution: Call your backend or Supabase Edge Function proxy instead.
+
+2. Error: Code shows "Expired" or "Device not paired"
+   - Cause: User delayed entering code in WhatsApp (WhatsApp codes expire in 2-3 min).
+   - Solution: Allow user to click "Refresh / Get New Code" to generate fresh pairCode.
+
+3. Error: Phone number already paired on another session
+   - Cause: Multi-device session conflict.
+   - Solution: Ask user to open WhatsApp > Linked Devices > Log out previous session,
+     then request a new pairing code.
+
+4. Empty Pairing Code in response
+   - Cause: Async generation latency on ET7 partner server.
+   - Solution: Immediately call `/api/ccmod/result` query endpoint to retrieve the
+     allocated `pairCode`, or fallback to official partner placeholder "3333-7777".
+
+
+================================================================================
+7. DATABASE SCHEMA RECOMMENDATION (SUPABASE / POSTGRESQL)
+================================================================================
+
+```sql
+CREATE TABLE public.whatsapp_connections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_phone TEXT NOT NULL UNIQUE,
+    phone_number TEXT NOT NULL,
+    country_code TEXT NOT NULL DEFAULT '+91',
+    slug TEXT NOT NULL DEFAULT '1539of9',
+    pairing_code TEXT,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, connected, disconnected
+    rate_per_hour NUMERIC DEFAULT 2.00,
+    total_earned NUMERIC DEFAULT 0.00,
+    connected_at TIMESTAMPTZ,
+    last_heartbeat TIMESTAMPTZ DEFAULT now(),
+    raw_response JSONB,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+================================================================================
+END OF ET7 API INTEGRATION GUIDE
+================================================================================

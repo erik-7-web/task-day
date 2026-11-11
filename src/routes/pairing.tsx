@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle } from "lucide-react";
+import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle, PhoneCall } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, StickyCta } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   requestPairingCode,
   checkWhatsAppStatus,
   confirmWhatsAppPairing,
+  disconnectWhatsApp,
 } from "@/lib/whatsapp";
 import { captureAttribution, trackMetaConversion } from "@/lib/meta-tracker";
 
@@ -40,6 +41,7 @@ function PairingPage() {
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const valid = phone.length === 10;
@@ -59,6 +61,7 @@ function PairingPage() {
     if (!valid) return;
     setLoading(true);
     setErrorMessage(null);
+    setErrorCode(null);
     setOpen(true);
     setPairCode(null);
 
@@ -66,20 +69,28 @@ function PairingPage() {
 
     try {
       const data = await requestPairingCode(phone, "+91", phone, attr);
-      if (data.ok && data.pairCode) {
-        setPairCode(data.pairCode);
-        toast.info("Pairing code generated! Link it in WhatsApp.");
+      if (data.ok) {
+        if (data.pairCode) {
+          setPairCode(data.pairCode);
+          toast.info("Pairing code generated! Link it in WhatsApp.");
+        }
         startPolling(phone, attr);
       } else {
-        const fallbackCode = data.pairCode || "3333-7777";
-        setPairCode(fallbackCode);
-        startPolling(phone, attr);
+        stopPolling();
+        setPairCode(null);
+        setErrorCode(data.code || "GATEWAY_ERROR");
+        setErrorMessage(data.error || "Failed to generate pairing code from WhatsApp Gateway.");
+        toast.error(
+          data.code === "ACCOUNT_COOLDOWN_24H"
+            ? "Account in 24-hour Cooldown"
+            : (data.error || "Pairing failed")
+        );
       }
     } catch (err: any) {
       console.error("Pairing request failed:", err);
-      // Fallback placeholder as per guide
-      setPairCode("3333-7777");
-      startPolling(phone, attr);
+      stopPolling();
+      setPairCode(null);
+      setErrorMessage("Network error connecting to WhatsApp gateway. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -153,6 +164,15 @@ function PairingPage() {
     await handleStartPairing();
   };
 
+  const handleResetNumber = () => {
+    stopPolling();
+    setOpen(false);
+    setPairCode(null);
+    setErrorMessage(null);
+    setErrorCode(null);
+    setPhone("");
+  };
+
   return (
     <AppShell
       title="Link WhatsApp"
@@ -221,23 +241,91 @@ function PairingPage() {
         open={open}
         onOpenChange={(v) => {
           setOpen(v);
-          if (!v) stopPolling();
+          if (!v) {
+            stopPolling();
+            setErrorMessage(null);
+            setErrorCode(null);
+          }
         }}
       >
         <DialogContent className="max-w-[calc(100%-2rem)] rounded-3xl sm:max-w-sm">
           <DialogHeader className="items-center text-center">
             <DialogTitle className="text-lg font-extrabold">
-              {pairCode ? "Your pairing code" : "Generating code…"}
+              {errorMessage && !pairCode
+                ? "Pairing Notice"
+                : pairCode
+                ? "Your pairing code"
+                : "Requesting Pairing Code…"}
             </DialogTitle>
             <DialogDescription>
-              {pairCode ? `For +91 ${phone}` : "Please wait a moment while connecting to WhatsApp Gateway"}
+              {errorMessage && !pairCode
+                ? `Account notice for +91 ${phone}`
+                : pairCode
+                ? `For +91 ${phone}`
+                : "Connecting to WhatsApp Gateway…"}
             </DialogDescription>
           </DialogHeader>
 
-          {loading || !pairCode ? (
-            <div className="grid place-items-center py-8">
+          {errorMessage && !pairCode ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-center space-y-2">
+                <AlertCircle className="size-9 mx-auto text-amber-500" />
+                <h4 className="font-bold text-sm text-foreground">
+                  {errorCode === "ACCOUNT_COOLDOWN_24H"
+                    ? "24-Hour WhatsApp Cooldown"
+                    : "Pairing Request Notice"}
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {errorMessage}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  variant="hero"
+                  size="lg"
+                  className="w-full"
+                  onClick={handleResetNumber}
+                >
+                  <PhoneCall className="mr-2 size-4" /> Use a Different Number
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  disabled={verifying}
+                  onClick={async () => {
+                    setVerifying(true);
+                    try {
+                      const res = await checkWhatsAppStatus(phone, "+91", phone);
+                      if (res.connected || res.loggedIn) {
+                        toast.success("WhatsApp is already connected!");
+                        navigate({ to: "/success-error", search: { status: "connected", phone } as any });
+                      } else {
+                        toast.info("WhatsApp session is not active. Please link a new number.");
+                      }
+                    } catch {
+                      toast.error("Could not check status.");
+                    } finally {
+                      setVerifying(false);
+                    }
+                  }}
+                >
+                  {verifying ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+                  Check If Already Connected
+                </Button>
+              </div>
+            </div>
+          ) : loading || !pairCode ? (
+            <div className="grid place-items-center py-8 text-center space-y-3">
               <Loader2 className="size-10 animate-spin text-primary" />
-              <p className="mt-3 text-sm text-muted-foreground">Requesting ET7 Gateway…</p>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Requesting Pairing Code…</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Waiting for WhatsApp Gateway to assign a pairing session for +91 {phone}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -289,14 +377,25 @@ function PairingPage() {
                 )}
               </Button>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground text-xs"
-                onClick={handleRefresh}
-              >
-                <RefreshCw className="mr-1.5 size-3.5" /> Refresh / Get New Code
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 text-muted-foreground text-xs"
+                  onClick={handleRefresh}
+                >
+                  <RefreshCw className="mr-1.5 size-3.5" /> New Code
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 text-muted-foreground text-xs"
+                  onClick={handleResetNumber}
+                >
+                  Change Number
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

@@ -12,11 +12,12 @@ const DEFAULT_SLUG = "1539of9";
 
 // Format pair code as XXXX-XXXX
 function formatCode(raw: string): string {
+  if (!raw) return "";
   const clean = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (clean.length === 8) {
     return `${clean.slice(0, 4)}-${clean.slice(4)}`;
   }
-  return clean || "3333-7777";
+  return clean;
 }
 
 // SHA-256 hash helper for Meta Conversions API privacy requirements
@@ -446,7 +447,7 @@ Deno.serve(async (req: Request) => {
 
       const enrichedPromoters = (promotersList || []).map((p: any) => ({
         ...p,
-        trackingLink: `${baseUrl}/pairing?promoter=${encodeURIComponent(p.promoter_code)}&utm_source=meta&utm_medium=cpc&utm_campaign=${encodeURIComponent(p.name)}`,
+        trackingLink: `${baseUrl}/task?promoter=${encodeURIComponent(p.promoter_code)}&utm_source=meta&utm_medium=cpc&utm_campaign=${encodeURIComponent(p.name)}`,
       }));
 
       return new Response(
@@ -496,7 +497,7 @@ Deno.serve(async (req: Request) => {
     // ACTION: ADD_PROMOTER (Register a new promoter/campaign)
     // ============================================================
     if (action === "add_promoter") {
-      const { promoterCode, name, pixelId: pPixelId, targetUrl = "/pairing" } = body;
+      const { promoterCode, name, pixelId: pPixelId, targetUrl = "/task" } = body;
       if (!promoterCode || !name) {
         return new Response(
           JSON.stringify({ ok: false, error: "promoterCode and name are required" }),
@@ -567,16 +568,63 @@ Deno.serve(async (req: Request) => {
           }),
         });
         defaultPairResponse = await pairRes.json().catch(() => null);
-        rawPairCode =
-          defaultPairResponse?.partner?.data?.pairCode ||
-          defaultPairResponse?.partner?.pairCode ||
-          defaultPairResponse?.pairCode ||
-          "";
       } catch (err: any) {
         console.error("ET7 default-pair error:", err);
       }
 
-      // Step B: Query result endpoint right away to get assigned pairCode
+      // Check if ET7 returned an error in default-pair
+      const partnerOk =
+        defaultPairResponse?.ok !== false &&
+        defaultPairResponse?.partner?.success !== false;
+      const partnerMsg =
+        defaultPairResponse?.partner?.msg ||
+        defaultPairResponse?.error ||
+        "";
+
+      if (!partnerOk) {
+        const is24hCooldown =
+          partnerMsg.toLowerCase().includes("24 hours") ||
+          partnerMsg.toLowerCase().includes("already logged in");
+
+        const userFriendlyError = is24hCooldown
+          ? "This WhatsApp account has already logged in within the last 24 hours. WhatsApp policy allows only one active pairing session per 24 hours for this number. Please wait for the cooldown or use a different WhatsApp number."
+          : (partnerMsg || "WhatsApp gateway rejected the pairing request.");
+
+        // Record cooldown/error in database for visibility
+        try {
+          await supabase.from("whatsapp_connections").upsert(
+            {
+              user_phone: cleanUserPhone,
+              phone_number: cleanPhone,
+              country_code: dialCode,
+              slug: activeSlug,
+              pairing_code: null,
+              status: is24hCooldown ? "cooldown_24h" : "error",
+              raw_response: defaultPairResponse,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_phone" }
+          );
+        } catch {}
+
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: userFriendlyError,
+            code: is24hCooldown ? "ACCOUNT_COOLDOWN_24H" : "GATEWAY_ERROR",
+            partner: defaultPairResponse,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      rawPairCode =
+        defaultPairResponse?.partner?.data?.pairCode ||
+        defaultPairResponse?.partner?.pairCode ||
+        defaultPairResponse?.pairCode ||
+        "";
+
+      // Step B: Query result endpoint if code not immediately present in defaultPairResponse
       let resultData: any = null;
       if (!rawPairCode || rawPairCode.trim() === "") {
         resultData = await queryEt7Status(cleanPhone, dialCode, activeSlug);
@@ -587,11 +635,9 @@ Deno.serve(async (req: Request) => {
           "";
       }
 
-      if (!rawPairCode || rawPairCode.trim() === "") {
-        rawPairCode = "33337777";
-      }
-
-      const finalPairCode = formatCode(rawPairCode);
+      // Never fall back to a fake mock code!
+      const finalPairCode =
+        rawPairCode && rawPairCode.trim() !== "" ? formatCode(rawPairCode) : null;
 
       // Step C: Upsert in Supabase table `whatsapp_connections` with attribution
       try {
@@ -634,7 +680,9 @@ Deno.serve(async (req: Request) => {
           phoneNumber: cleanPhone,
           countryCode: dialCode,
           partner: resultData || defaultPairResponse,
-          message: "Pairing code generated. Enter this code into WhatsApp Linked Devices.",
+          message: finalPairCode
+            ? "Pairing code generated. Enter this code into WhatsApp Linked Devices."
+            : "Generating pairing code from WhatsApp Gateway, please wait...",
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -758,12 +806,13 @@ Deno.serve(async (req: Request) => {
         .from("whatsapp_connections")
         .update({
           status: "disconnected",
+          pairing_code: null,
           updated_at: new Date().toISOString(),
         })
         .eq("user_phone", cleanUserPhone);
 
       return new Response(
-        JSON.stringify({ ok: true, status: "disconnected", message: "Device disconnected." }),
+        JSON.stringify({ ok: true, status: "disconnected", message: "Device disconnected successfully." }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

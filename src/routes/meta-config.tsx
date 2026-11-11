@@ -329,7 +329,7 @@ function MetaConfigPage() {
             <div className="space-y-3">
               {promoters.map((p) => {
                 const origin = typeof window !== "undefined" ? window.location.origin : "";
-                const trackingLink = `${origin}/pairing?promoter=${encodeURIComponent(p.promoter_code)}&utm_source=meta&utm_medium=cpc&utm_campaign=${encodeURIComponent(p.name)}`;
+                const trackingLink = `${origin}/task?promoter=${encodeURIComponent(p.promoter_code)}&utm_source=meta&utm_medium=cpc&utm_campaign=${encodeURIComponent(p.name)}`;
                 const convRate = p.total_visits > 0 ? ((p.total_conversions / p.total_visits) * 100).toFixed(1) : "0.0";
 
                 return (

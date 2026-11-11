@@ -60,10 +60,10 @@ function TaskPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Button asChild variant="hero" size="sm" className="h-9 rounded-xl">
-                <Link to="/pairing">Claim</Link>
+                <Link to="/pairing" search={(prev: any) => prev}>Claim</Link>
               </Button>
               <Button asChild variant="soft" size="sm" className="h-9 rounded-xl">
-                <Link to="/invite">Invite</Link>
+                <Link to="/invite" search={(prev: any) => prev}>Invite</Link>
               </Button>
             </div>
           </li>

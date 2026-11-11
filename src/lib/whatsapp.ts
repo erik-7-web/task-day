@@ -8,13 +8,14 @@ const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/whatsapp-pair`;
 
 export interface PairResponse {
   ok: boolean;
-  pairCode?: string;
+  pairCode?: string | null;
   status?: string;
   phoneNumber?: string;
   countryCode?: string;
   partner?: any;
   message?: string;
   error?: string;
+  code?: string;
 }
 
 export interface ConversionPayload {
@@ -38,6 +39,7 @@ export interface CheckResponse {
   partner?: any;
   conversion?: ConversionPayload;
   error?: string;
+  code?: string;
 }
 
 export interface ConfirmResponse {
@@ -49,6 +51,7 @@ export interface ConfirmResponse {
   conversion?: ConversionPayload;
   message?: string;
   error?: string;
+  code?: string;
 }
 
 export async function requestPairingCode(
@@ -120,6 +123,28 @@ export async function confirmWhatsAppPairing(
       userPhone: userPhone || phoneNumber,
       force,
       ...(attribution || {}),
+    }),
+  });
+  return await res.json();
+}
+
+export async function disconnectWhatsApp(
+  phoneNumber: string,
+  countryCode = "+91",
+  userPhone?: string
+): Promise<{ ok: boolean; status?: string; message?: string }> {
+  const res = await fetch(FUNCTION_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({
+      action: "disconnect",
+      phoneNumber,
+      countryCode,
+      userPhone: userPhone || phoneNumber,
     }),
   });
   return await res.json();

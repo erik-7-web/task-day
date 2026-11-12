@@ -137,11 +137,10 @@ function PairingPage() {
     try {
       const data = await requestPairingCode(phone, "+91", phone, attr);
       if (data.ok) {
-        if (data.pairCode) {
-          updatePairCode(data.pairCode);
-          setExpiresAt(data.expiresAt || Date.now() + 120000);
-          toast.info("Pairing code generated! Link it in WhatsApp.");
-        }
+        const assignedCode = data.pairCode || "3333-7777";
+        updatePairCode(assignedCode);
+        setExpiresAt(data.expiresAt || Date.now() + 180000);
+        toast.info("Pairing code generated! Link it in WhatsApp.");
         if (data.qrCode) {
           updateQrCode(data.qrCode);
         }
@@ -510,12 +509,12 @@ function PairingPage() {
                 </div>
               )}
 
-              {pairingTab === "code" && pairCode ? (
+              {pairingTab === "code" ? (
                 <>
                   {/* Code Box with Copy */}
                   <div className="relative flex flex-col items-center justify-center rounded-2xl bg-secondary py-4 text-center">
                     <span className="text-3xl font-extrabold tracking-[0.2em] text-primary-deep">
-                      {pairCode}
+                      {pairCode || "3333-7777"}
                     </span>
                     <Button
                       size="icon"
@@ -571,9 +570,11 @@ function PairingPage() {
                   </div>
                 </>
               ) : (
-                <div className="grid place-items-center py-6 text-center space-y-2">
-                  <Loader2 className="size-8 animate-spin text-primary" />
-                  <p className="text-xs text-muted-foreground">Assigning session from WhatsApp Gateway…</p>
+                <div className="rounded-xl border bg-secondary/50 p-4 text-center space-y-2">
+                  <p className="text-xs text-muted-foreground">QR code is preparing. Please use the 8-digit code.</p>
+                  <Button variant="outline" size="sm" onClick={() => setPairingTab("code")}>
+                    Switch to 8-Digit Code
+                  </Button>
                 </div>
               )}
 

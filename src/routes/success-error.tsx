@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertCircle, CheckCircle, ArrowRight, ShieldCheck } from "lucide-react";
 import { AppShell, StickyCta } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { trackMetaCustomEvent } from "@/lib/meta-tracker";
 
 type SuccessErrorSearch = {
   status?: string;
@@ -30,6 +32,18 @@ function ResultPage() {
   const search = Route.useSearch();
   const isConnected = search?.status === "connected" || search?.status === "success";
   const phone = search?.phone;
+
+  useEffect(() => {
+    if (isConnected) {
+      // Trigger custom Meta event "completepair" on success page load
+      trackMetaCustomEvent("completepair", {
+        phone: phone || "",
+        status: "connected",
+        value: 100.0,
+        currency: "INR",
+      });
+    }
+  }, [isConnected, phone]);
 
   if (isConnected) {
     return (

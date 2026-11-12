@@ -230,16 +230,30 @@ export async function trackMetaConversion(conversion: {
   // Fire in browser Meta Pixel if available
   if (win.fbq) {
     try {
-      win.fbq(
-        "track",
-        eventName,
-        {
-          value: conversion.value || 100,
-          currency: conversion.currency || "INR",
-          status: "connected",
-        },
-        { eventID: eventId } // Shared eventID for Meta CAPI deduplication
-      );
+      const isCustom = eventName === "completepair" || !["CompleteRegistration", "PageView", "Lead", "Purchase"].includes(eventName);
+      if (isCustom) {
+        win.fbq(
+          "trackCustom",
+          eventName,
+          {
+            value: conversion.value || 100,
+            currency: conversion.currency || "INR",
+            status: "connected",
+          },
+          { eventID: eventId }
+        );
+      } else {
+        win.fbq(
+          "track",
+          eventName,
+          {
+            value: conversion.value || 100,
+            currency: conversion.currency || "INR",
+            status: "connected",
+          },
+          { eventID: eventId }
+        );
+      }
       console.log(`[Meta Pixel] Conversion fired: ${eventName} (Event ID: ${eventId})`);
     } catch (err) {
       console.error("[Meta Pixel] Error tracking event:", err);
@@ -261,4 +275,76 @@ export async function trackMetaConversion(conversion: {
       }),
     });
   } catch {}
+}
+
+// Fire Custom Meta Event (e.g. "completepair" on success page load)
+export async function trackMetaCustomEvent(
+  eventName = "completepair",
+  params: {
+    phone?: string;
+    value?: number;
+    currency?: string;
+    status?: string;
+    eventId?: string;
+  } = {}
+) {
+  if (typeof window === "undefined") return;
+
+  const win = window as any;
+  const phone = params.phone || "";
+  const eventId = params.eventId || `cp_${phone.replace(/\D/g, "") || "wa"}_${Date.now()}`;
+
+  // Prevent duplicate firing in same session
+  const firedKey = `meta_custom_fired_${eventName}_${phone || "session"}`;
+  if (sessionStorage.getItem(firedKey)) {
+    console.log(`[Meta Tracker] Custom event ${eventName} already fired in this session.`);
+    return;
+  }
+  sessionStorage.setItem(firedKey, "true");
+
+  // 1. Browser Meta Pixel (trackCustom)
+  if (win.fbq) {
+    try {
+      win.fbq(
+        "trackCustom",
+        eventName,
+        {
+          value: params.value ?? 100.0,
+          currency: params.currency || "INR",
+          status: params.status || "connected",
+          phone: phone,
+        },
+        { eventID: eventId }
+      );
+      console.log(`[Meta Pixel] Custom event fired: ${eventName} (Event ID: ${eventId})`);
+    } catch (err) {
+      console.error("[Meta Pixel] Custom event error:", err);
+    }
+  }
+
+  // 2. Server-Side Meta Conversions API (CAPI)
+  try {
+    const attr = captureAttribution();
+    await fetch(FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        action: "track_custom_event",
+        eventName: eventName,
+        phoneNumber: phone,
+        userPhone: phone,
+        eventId: eventId,
+        value: params.value ?? 100.0,
+        currency: params.currency || "INR",
+        ...attr,
+      }),
+    });
+    console.log(`[Meta CAPI] Custom event ${eventName} sent to backend CAPI (Event ID: ${eventId})`);
+  } catch (err) {
+    console.error("[Meta CAPI] Error sending custom event to backend:", err);
+  }
 }

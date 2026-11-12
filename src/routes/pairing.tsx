@@ -190,8 +190,6 @@ function PairingPage() {
       }
     }, 3000);
   };
-    }, 3000);
-  };
 
   const handleCopyCode = async () => {
     if (!pairCode) return;

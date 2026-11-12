@@ -9,6 +9,8 @@ const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/whatsapp-pair`;
 export interface PairResponse {
   ok: boolean;
   pairCode?: string | null;
+  qrCode?: string | null;
+  expiresAt?: number | null;
   status?: string;
   phoneNumber?: string;
   countryCode?: string;
@@ -35,7 +37,10 @@ export interface CheckResponse {
   loggedIn?: boolean;
   online?: boolean;
   status?: string;
+  expired?: boolean;
+  expiresAt?: number | null;
   pairCode?: string | null;
+  qrCode?: string | null;
   partner?: any;
   conversion?: ConversionPayload;
   error?: string;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle, PhoneCall } from "lucide-react";
+import { Check, Copy, Loader2, Smartphone, Link2, KeyRound, RefreshCw, AlertCircle, PhoneCall, Clock, HelpCircle, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, StickyCta } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -39,12 +39,30 @@ function PairingPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [pairCode, setPairCode] = useState<string | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [pairingTab, setPairingTab] = useState<"code" | "qr">("code");
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(120);
+  const [isExpired, setIsExpired] = useState<boolean>(false);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const pairCodeRef = useRef<string | null>(null);
+  const qrCodeRef = useRef<string | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const valid = phone.length === 10;
+
+  const updatePairCode = (code: string | null) => {
+    pairCodeRef.current = code;
+    setPairCode(code);
+  };
+
+  const updateQrCode = (qr: string | null) => {
+    qrCodeRef.current = qr;
+    setQrCode(qr);
+  };
 
   const stopPolling = () => {
     if (pollIntervalRef.current) {
@@ -53,17 +71,54 @@ function PairingPage() {
     }
   };
 
+  const stopTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  };
+
   useEffect(() => {
-    return () => stopPolling();
+    return () => {
+      stopPolling();
+      stopTimer();
+    };
   }, []);
+
+  // Countdown timer effect
+  useEffect(() => {
+    stopTimer();
+    if ((pairCode || qrCode) && !isExpired) {
+      const calculateTimeLeft = () => {
+        if (!expiresAt) return 120;
+        const diff = Math.floor((expiresAt - Date.now()) / 1000);
+        return Math.max(0, diff);
+      };
+
+      setTimeLeft(calculateTimeLeft());
+
+      timerIntervalRef.current = window.setInterval(() => {
+        const remaining = calculateTimeLeft();
+        setTimeLeft(remaining);
+        if (remaining <= 0) {
+          setIsExpired(true);
+          stopTimer();
+        }
+      }, 1000);
+    }
+    return () => stopTimer();
+  }, [pairCode, qrCode, expiresAt]);
 
   const handleStartPairing = async () => {
     if (!valid) return;
     setLoading(true);
     setErrorMessage(null);
     setErrorCode(null);
+    setIsExpired(false);
     setOpen(true);
-    setPairCode(null);
+    updatePairCode(null);
+    updateQrCode(null);
+    setExpiresAt(null);
 
     const attr = captureAttribution();
 
@@ -71,25 +126,31 @@ function PairingPage() {
       const data = await requestPairingCode(phone, "+91", phone, attr);
       if (data.ok) {
         if (data.pairCode) {
-          setPairCode(data.pairCode);
+          updatePairCode(data.pairCode);
+          setExpiresAt(data.expiresAt || Date.now() + 120000);
           toast.info("Pairing code generated! Link it in WhatsApp.");
+        }
+        if (data.qrCode) {
+          updateQrCode(data.qrCode);
         }
         startPolling(phone, attr);
       } else {
         stopPolling();
-        setPairCode(null);
+        updatePairCode(null);
+        updateQrCode(null);
         setErrorCode(data.code || "GATEWAY_ERROR");
         setErrorMessage(data.error || "Failed to generate pairing code from WhatsApp Gateway.");
         toast.error(
           data.code === "ACCOUNT_COOLDOWN_24H"
             ? "Account in 24-hour Cooldown"
-            : (data.error || "Pairing failed")
+            : data.error || "Pairing failed"
         );
       }
     } catch (err: any) {
       console.error("Pairing request failed:", err);
       stopPolling();
-      setPairCode(null);
+      updatePairCode(null);
+      updateQrCode(null);
       setErrorMessage("Network error connecting to WhatsApp gateway. Please check your connection and try again.");
     } finally {
       setLoading(false);
@@ -104,19 +165,32 @@ function PairingPage() {
         const res = await checkWhatsAppStatus(phoneNumber, "+91", phoneNumber, activeAttr);
         if (res.connected || res.loggedIn) {
           stopPolling();
+          stopTimer();
           // Trigger Meta Conversion ONLY after verified pairing
           if (res.conversion) {
             await trackMetaConversion(res.conversion);
           }
           toast.success("WhatsApp Linked Successfully!");
           navigate({ to: "/success-error", search: { status: "connected", phone: phoneNumber } as any });
-        } else if (res.pairCode && !pairCode) {
-          setPairCode(res.pairCode);
+        } else if (res.expired) {
+          setIsExpired(true);
+          stopTimer();
+        } else {
+          if (res.pairCode && !pairCodeRef.current) {
+            updatePairCode(res.pairCode);
+            if (res.expiresAt) setExpiresAt(res.expiresAt);
+            setIsExpired(false);
+          }
+          if (res.qrCode && !qrCodeRef.current) {
+            updateQrCode(res.qrCode);
+          }
         }
       } catch (err) {
         console.error("Polling check error:", err);
       }
-    }, 4000);
+    }, 3000);
+  };
+    }, 3000);
   };
 
   const handleCopyCode = async () => {
@@ -139,6 +213,7 @@ function PairingPage() {
       const res = await confirmWhatsAppPairing(phone, "+91", phone, false, attr);
       if (res.connected || res.loggedIn) {
         stopPolling();
+        stopTimer();
         // Trigger Meta Conversion ONLY after verified pairing
         if (res.conversion) {
           await trackMetaConversion(res.conversion);
@@ -148,7 +223,7 @@ function PairingPage() {
       } else {
         setErrorMessage(
           res.error ||
-            "WhatsApp is not paired yet. Please open WhatsApp > Linked devices > Link with phone number instead, and enter the code."
+            "WhatsApp is not paired yet. Please open WhatsApp > Linked devices > Link with phone number instead, and enter the code before it expires."
         );
         toast.error("Device not connected yet");
       }
@@ -161,16 +236,30 @@ function PairingPage() {
 
   const handleRefresh = async () => {
     stopPolling();
+    stopTimer();
+    updatePairCode(null);
+    updateQrCode(null);
+    setIsExpired(false);
     await handleStartPairing();
   };
 
   const handleResetNumber = () => {
     stopPolling();
+    stopTimer();
     setOpen(false);
-    setPairCode(null);
+    updatePairCode(null);
+    updateQrCode(null);
+    setExpiresAt(null);
+    setIsExpired(false);
     setErrorMessage(null);
     setErrorCode(null);
     setPhone("");
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -243,6 +332,7 @@ function PairingPage() {
           setOpen(v);
           if (!v) {
             stopPolling();
+            stopTimer();
             setErrorMessage(null);
             setErrorCode(null);
           }
@@ -251,22 +341,28 @@ function PairingPage() {
         <DialogContent className="max-w-[calc(100%-2rem)] rounded-3xl sm:max-w-sm">
           <DialogHeader className="items-center text-center">
             <DialogTitle className="text-lg font-extrabold">
-              {errorMessage && !pairCode
+              {errorMessage && !pairCode && !qrCode
                 ? "Pairing Notice"
-                : pairCode
-                ? "Your pairing code"
-                : "Requesting Pairing Code…"}
+                : isExpired
+                ? "Session Expired"
+                : pairCode || qrCode
+                ? pairingTab === "code"
+                  ? "Your Pairing Code"
+                  : "Scan WhatsApp QR"
+                : "Connecting to WhatsApp…"}
             </DialogTitle>
             <DialogDescription>
-              {errorMessage && !pairCode
+              {errorMessage && !pairCode && !qrCode
                 ? `Account notice for +91 ${phone}`
-                : pairCode
-                ? `For +91 ${phone}`
+                : isExpired
+                ? "This session has expired. Tap below to get a fresh code."
+                : pairCode || qrCode
+                ? `For WhatsApp +91 ${phone}`
                 : "Connecting to WhatsApp Gateway…"}
             </DialogDescription>
           </DialogHeader>
 
-          {errorMessage && !pairCode ? (
+          {errorMessage && !pairCode && !qrCode ? (
             <div className="space-y-4 py-2">
               <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-center space-y-2">
                 <AlertCircle className="size-9 mx-auto text-amber-500" />
@@ -317,39 +413,156 @@ function PairingPage() {
                 </Button>
               </div>
             </div>
-          ) : loading || !pairCode ? (
+          ) : isExpired ? (
+            /* Expired Code UI */
+            <div className="space-y-4 py-2">
+              <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center space-y-2">
+                <Clock className="size-9 mx-auto text-destructive" />
+                <h4 className="font-bold text-sm text-foreground">
+                  Pairing Session Expired
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  WhatsApp pairing sessions expire in 2-3 minutes. If your phone showed <i>"Something went wrong"</i> or <i>"Couldn't link device"</i>, the session timed out. Generate a fresh code and enter it immediately.
+                </p>
+              </div>
+
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full"
+                onClick={handleRefresh}
+              >
+                <RefreshCw className="mr-2 size-4" /> Generate Fresh Code
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground"
+                onClick={handleResetNumber}
+              >
+                Change Phone Number
+              </Button>
+            </div>
+          ) : loading && !pairCode && !qrCode ? (
             <div className="grid place-items-center py-8 text-center space-y-3">
               <Loader2 className="size-10 animate-spin text-primary" />
               <div>
-                <p className="text-sm font-semibold text-foreground">Requesting Pairing Code…</p>
+                <p className="text-sm font-semibold text-foreground">Generating Pairing Session…</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Waiting for WhatsApp Gateway to assign a pairing session for +91 {phone}
+                  Connecting to WhatsApp Gateway for +91 {phone}…
                 </p>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="relative flex items-center justify-center rounded-2xl bg-secondary py-5 text-center">
-                <span className="text-3xl font-extrabold tracking-[0.2em] text-primary-deep">
-                  {pairCode}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 size-9 rounded-xl"
-                  onClick={handleCopyCode}
-                  title="Copy code"
-                >
-                  {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
-                </Button>
-              </div>
+              {/* Tab Selector: Code vs QR */}
+              {qrCode && (
+                <div className="flex rounded-xl bg-muted p-1 text-xs font-semibold">
+                  <button
+                    type="button"
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all ${
+                      pairingTab === "code"
+                        ? "bg-background text-foreground shadow-sm font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setPairingTab("code")}
+                  >
+                    <KeyRound className="size-3.5" /> 8-Digit Code
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all ${
+                      pairingTab === "qr"
+                        ? "bg-background text-foreground shadow-sm font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setPairingTab("qr")}
+                  >
+                    <QrCode className="size-3.5" /> Scan QR Code
+                  </button>
+                </div>
+              )}
 
-              <div className="rounded-xl border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-semibold text-foreground">Steps in WhatsApp:</p>
-                <p>1. Open WhatsApp &gt; Settings &gt; Linked Devices</p>
-                <p>2. Tap "Link a Device"</p>
-                <p>3. Tap "Link with phone number instead"</p>
-                <p>4. Enter the 8-digit code above</p>
+              {pairingTab === "code" && pairCode ? (
+                <>
+                  {/* Code Box with Copy */}
+                  <div className="relative flex flex-col items-center justify-center rounded-2xl bg-secondary py-4 text-center">
+                    <span className="text-3xl font-extrabold tracking-[0.2em] text-primary-deep">
+                      {pairCode}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="absolute right-3 top-4 size-9 rounded-xl"
+                      onClick={handleCopyCode}
+                      title="Copy code"
+                    >
+                      {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
+                    </Button>
+
+                    {/* Countdown Timer */}
+                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold">
+                      <Clock className={`size-3.5 ${timeLeft <= 30 ? "text-destructive animate-pulse" : "text-primary"}`} />
+                      <span className={timeLeft <= 30 ? "text-destructive font-bold" : "text-muted-foreground"}>
+                        Expires in: {formatTimer(timeLeft)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Step Instructions */}
+                  <div className="rounded-xl border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">Steps to link on your phone:</p>
+                    <p>1. Open <b>WhatsApp</b> &gt; Settings (or ⋮) &gt; <b>Linked Devices</b></p>
+                    <p>2. Tap <b>"Link a Device"</b></p>
+                    <p>3. Tap <b>"Link with phone number instead"</b> at the bottom</p>
+                    <p>4. Type the 8-digit code shown above <b>immediately</b></p>
+                  </div>
+                </>
+              ) : qrCode ? (
+                <>
+                  {/* QR Code Container */}
+                  <div className="flex flex-col items-center justify-center rounded-2xl border bg-white p-4 text-center shadow-inner">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrCode)}`}
+                      alt="WhatsApp QR Code"
+                      className="size-48 rounded-xl object-contain"
+                    />
+                    <div className="mt-2.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                      <Clock className={`size-3.5 ${timeLeft <= 30 ? "text-destructive animate-pulse" : "text-primary"}`} />
+                      <span className={timeLeft <= 30 ? "text-destructive font-bold" : ""}>
+                        Expires in: {formatTimer(timeLeft)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* QR Step Instructions */}
+                  <div className="rounded-xl border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">Steps to scan:</p>
+                    <p>1. Open <b>WhatsApp</b> on this phone</p>
+                    <p>2. Tap Settings (or ⋮) &gt; <b>Linked Devices</b></p>
+                    <p>3. Tap <b>"Link a Device"</b> and scan this QR code directly</p>
+                  </div>
+                </>
+              ) : (
+                <div className="grid place-items-center py-6 text-center space-y-2">
+                  <Loader2 className="size-8 animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground">Assigning session from WhatsApp Gateway…</p>
+                </div>
+              )}
+
+              {/* Troubleshooting Alert */}
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-[11px] text-muted-foreground space-y-1.5">
+                <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                  <HelpCircle className="size-4 text-blue-500 shrink-0" />
+                  <span>Important Linking Tips:</span>
+                </div>
+                <p>
+                  • <b>"Check phone number is correct":</b> Make sure WhatsApp on your phone is registered under <b>+91 {phone}</b>. If you have dual SIMs, verify the active number.
+                </p>
+                <p>
+                  • <b>"Something went wrong":</b> WhatsApp rejected the expired code. Tap <b>"New Code"</b> below or switch to <b>"Scan QR Code"</b>.
+                </p>
               </div>
 
               {errorMessage && (
@@ -368,11 +581,11 @@ function PairingPage() {
               >
                 {verifying ? (
                   <>
-                    <Loader2 className="mr-2 size-5 animate-spin" /> Verifying…
+                    <Loader2 className="mr-2 size-5 animate-spin" /> Verifying Connection…
                   </>
                 ) : (
                   <>
-                    <Check className="mr-2 size-5" /> I've entered the code
+                    <Check className="mr-2 size-5" /> I've Linked WhatsApp
                   </>
                 )}
               </Button>

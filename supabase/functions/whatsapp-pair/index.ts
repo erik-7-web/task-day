@@ -627,13 +627,29 @@ Deno.serve(async (req: Request) => {
       // Step B: Query result endpoint if code not immediately present in defaultPairResponse
       let resultData: any = null;
       if (!rawPairCode || rawPairCode.trim() === "") {
-        resultData = await queryEt7Status(cleanPhone, dialCode, activeSlug);
-        rawPairCode =
-          resultData?.partner?.data?.pairCode ||
-          resultData?.partner?.pairCode ||
-          resultData?.pairCode ||
-          "";
+        // Poll up to 3 times (1.2s each) so pairing code and QR are ready immediately
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await new Promise((r) => setTimeout(r, 1200));
+          resultData = await queryEt7Status(cleanPhone, dialCode, activeSlug);
+          const partnerInner = resultData?.partner?.data || resultData?.partner || {};
+
+          const now = Date.now();
+          const expMs = partnerInner.pairExpiresAtMs || partnerInner.requestExpiresAtMs || 0;
+          const isExp = partnerInner.reason === "qr_expired" || (expMs > 0 && now > expMs);
+
+          if (!isExp && partnerInner.pairCode) {
+            rawPairCode = partnerInner.pairCode;
+            break;
+          }
+        }
       }
+
+      const activePartnerInner =
+        (resultData || defaultPairResponse)?.partner?.data ||
+        (resultData || defaultPairResponse)?.partner ||
+        {};
+      const qrData = activePartnerInner.qrCode || null;
+      const expiresAtMs = activePartnerInner.pairExpiresAtMs || activePartnerInner.requestExpiresAtMs || null;
 
       // Never fall back to a fake mock code!
       const finalPairCode =
@@ -676,7 +692,9 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           ok: true,
           pairCode: finalPairCode,
-          status: "pending",
+          qrCode: qrData,
+          expiresAt: expiresAtMs,
+          status: finalPairCode ? "pair_code" : "pending",
           phoneNumber: cleanPhone,
           countryCode: dialCode,
           partner: resultData || defaultPairResponse,
@@ -697,8 +715,27 @@ Deno.serve(async (req: Request) => {
       const partnerInner = partnerData?.partner?.data || partnerData?.partner || {};
       const isActuallyLoggedIn = partnerInner.loggedIn === true;
       const online = partnerInner.online === true;
-      const status = isActuallyLoggedIn ? "connected" : (partnerInner.status || "pending");
-      const code = partnerInner.pairCode ? formatCode(partnerInner.pairCode) : null;
+
+      const now = Date.now();
+      const expiresAtMs = partnerInner.pairExpiresAtMs || partnerInner.requestExpiresAtMs || null;
+      const isExpired =
+        partnerInner.reason === "qr_expired" ||
+        partnerInner.state === "expired" ||
+        (expiresAtMs && now > expiresAtMs);
+
+      let status = "pending";
+      if (isActuallyLoggedIn) {
+        status = "connected";
+      } else if (isExpired) {
+        status = "expired";
+      } else {
+        status = partnerInner.status || "pending";
+      }
+
+      // Do NOT send expired pair code as active!
+      const rawCode = partnerInner.pairCode || "";
+      const code = !isExpired && rawCode && rawCode.trim() !== "" ? formatCode(rawCode) : null;
+      const qrData = !isExpired ? (partnerInner.qrCode || null) : null;
 
       let conversionData: any = null;
 
@@ -729,7 +766,10 @@ Deno.serve(async (req: Request) => {
           loggedIn: isActuallyLoggedIn,
           online,
           status,
+          expired: isExpired,
+          expiresAt: expiresAtMs,
           pairCode: code,
+          qrCode: qrData,
           partner: partnerData,
           conversion: conversionData,
         }),

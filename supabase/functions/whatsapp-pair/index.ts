@@ -433,17 +433,29 @@ Deno.serve(async (req: Request) => {
       }
 
       // Load active Meta Pixel configuration
+      let pId = promoterId;
+      if (!pId && uPhone) {
+        try {
+          const { data: conn } = await supabase
+            .from("whatsapp_connections")
+            .select("promoter_id")
+            .eq("user_phone", uPhone)
+            .maybeSingle();
+          if (conn?.promoter_id) pId = conn.promoter_id;
+        } catch {}
+      }
+
       let activePixelId = "";
       let activeAccessToken = "";
-      let activeTestEventCode = "";
+      let activeTestEventCode = body.testEventCode || "";
       let activeCurrency = "INR";
       let activeValue = 100.0;
 
-      if (promoterId) {
+      if (pId) {
         const { data: promoterData } = await supabase
           .from("promoters")
           .select("pixel_id, access_token")
-          .eq("promoter_code", promoterId)
+          .eq("promoter_code", pId)
           .maybeSingle();
 
         if (promoterData?.pixel_id) activePixelId = promoterData.pixel_id;
@@ -458,9 +470,12 @@ Deno.serve(async (req: Request) => {
 
       if (!activePixelId && globalConfig?.pixel_id) activePixelId = globalConfig.pixel_id;
       if (!activeAccessToken && globalConfig?.access_token) activeAccessToken = globalConfig.access_token;
-      if (globalConfig?.test_event_code) activeTestEventCode = globalConfig.test_event_code;
+      if (!activeTestEventCode && globalConfig?.test_event_code) activeTestEventCode = globalConfig.test_event_code;
       if (globalConfig?.currency) activeCurrency = globalConfig.currency;
       if (globalConfig?.conversion_value) activeValue = Number(globalConfig.conversion_value);
+
+      if (!activePixelId) activePixelId = "4739115269745269";
+      if (!activeTestEventCode) activeTestEventCode = "TEST44482";
 
       // Trigger Meta Conversions API (Server-side)
       const capiResult = await triggerMetaCapi({
@@ -474,7 +489,7 @@ Deno.serve(async (req: Request) => {
         ua: userAgent,
         fbpVal: fbp,
         fbcVal: fbc || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : ""),
-        promoter: promoterId,
+        promoter: pId || promoterId,
         sourceUrl: landingPage,
         value: activeValue,
         currency: activeCurrency,
@@ -486,7 +501,7 @@ Deno.serve(async (req: Request) => {
         event_name: customEventName,
         visitor_id: visitorId || `v_${uPhone}`,
         user_phone: uPhone,
-        promoter_id: promoterId || null,
+        promoter_id: pId || promoterId || null,
         fbclid: fbclid || null,
         fbp: fbp || null,
         fbc: fbc || (fbclid ? `fb.1.${Date.now()}.${fbclid}` : null),

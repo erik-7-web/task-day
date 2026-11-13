@@ -137,43 +137,56 @@ export function captureAttribution(): AttributionData {
   };
 }
 
-// Dynamically inject Meta Pixel base script
-export function initMetaPixel(pixelId: string) {
-  if (typeof window === "undefined" || !pixelId || pixelId === "123456789012345") return;
+export const DEFAULT_PIXEL_ID = "4739115269745269";
+
+// Ensure Meta Pixel base stub is immediately available
+export function ensureMetaPixelInitialized(pixelId: string = DEFAULT_PIXEL_ID) {
+  if (typeof window === "undefined") return;
 
   const win = window as any;
-  if (win.fbq) {
-    // If already initialized, init this specific pixel
-    try {
-      win.fbq("init", pixelId);
-      win.fbq("track", "PageView");
-    } catch {}
-    return;
+  if (!win.fbq) {
+    /* eslint-disable */
+    (function (f: any, b: any, e: any, v: any, n?: any, t?: any, s?: any) {
+      if (f.fbq) return;
+      n = f.fbq = function () {
+        n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+      };
+      if (!f._fbq) f._fbq = n;
+      n.push = n;
+      n.loaded = !0;
+      n.version = "2.0";
+      n.queue = [];
+      t = b.createElement(e);
+      t.async = !0;
+      t.src = v;
+      s = b.getElementsByTagName(e)[0];
+      if (s && s.parentNode) {
+        s.parentNode.insertBefore(t, s);
+      } else {
+        document.head.appendChild(t);
+      }
+    })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+    /* eslint-enable */
   }
 
-  // Standard Meta Pixel snippet
-  /* eslint-disable */
-  (function (f: any, b: any, e: any, v: any, n?: any, t?: any, s?: any) {
-    if (f.fbq) return;
-    n = f.fbq = function () {
-      n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
-    };
-    if (!f._fbq) f._fbq = n;
-    n.push = n;
-    n.loaded = !0;
-    n.version = "2.0";
-    n.queue = [];
-    t = b.createElement(e);
-    t.async = !0;
-    t.src = v;
-    s = b.getElementsByTagName(e)[0];
-    s.parentNode.insertBefore(t, s);
-  })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
-  /* eslint-enable */
+  const targetPixel = pixelId || DEFAULT_PIXEL_ID;
+  if (targetPixel && !win._fbq_initialized_pixels?.[targetPixel]) {
+    win._fbq_initialized_pixels = win._fbq_initialized_pixels || {};
+    win._fbq_initialized_pixels[targetPixel] = true;
+    try {
+      win.fbq("init", targetPixel);
+      console.log(`[Meta Pixel] Initialized pixel ID: ${targetPixel}`);
+    } catch {}
+  }
+}
 
-  win.fbq("init", pixelId);
-  win.fbq("track", "PageView");
-  console.log(`[Meta Pixel] Initialized pixel ID: ${pixelId} (PageView tracked)`);
+// Dynamically inject Meta Pixel base script
+export function initMetaPixel(pixelId: string) {
+  ensureMetaPixelInitialized(pixelId);
+  const win = window as any;
+  try {
+    win.fbq("track", "PageView");
+  } catch {}
 }
 
 // Track Visit on Landing Page
@@ -290,17 +303,13 @@ export async function trackMetaCustomEvent(
 ) {
   if (typeof window === "undefined") return;
 
-  const win = window as any;
-  const phone = params.phone || "";
-  const eventId = params.eventId || `cp_${phone.replace(/\D/g, "") || "wa"}_${Date.now()}`;
+  const cleanPhone = (params.phone || "").replace(/[^0-9]/g, "");
+  const eventId = params.eventId || `cp_${cleanPhone || "wa"}_${Date.now()}`;
 
-  // Prevent duplicate firing in same session
-  const firedKey = `meta_custom_fired_${eventName}_${phone || "session"}`;
-  if (sessionStorage.getItem(firedKey)) {
-    console.log(`[Meta Tracker] Custom event ${eventName} already fired in this session.`);
-    return;
-  }
-  sessionStorage.setItem(firedKey, "true");
+  // Ensure Meta Pixel is initialized immediately
+  ensureMetaPixelInitialized();
+
+  const win = window as any;
 
   // 1. Browser Meta Pixel (trackCustom)
   if (win.fbq) {
@@ -312,20 +321,21 @@ export async function trackMetaCustomEvent(
           value: params.value ?? 100.0,
           currency: params.currency || "INR",
           status: params.status || "connected",
-          phone: phone,
+          content_name: "WhatsApp Pairing Success",
+          phone: cleanPhone,
         },
         { eventID: eventId }
       );
-      console.log(`[Meta Pixel] Custom event fired: ${eventName} (Event ID: ${eventId})`);
+      console.log(`[Meta Pixel] Custom event "${eventName}" fired successfully (Event ID: ${eventId})`);
     } catch (err) {
       console.error("[Meta Pixel] Custom event error:", err);
     }
   }
 
-  // 2. Server-Side Meta Conversions API (CAPI)
+  // 2. Server-Side Meta Conversions API (CAPI) & Supabase Logging
   try {
     const attr = captureAttribution();
-    await fetch(FUNCTION_URL, {
+    const res = await fetch(FUNCTION_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -335,15 +345,33 @@ export async function trackMetaCustomEvent(
       body: JSON.stringify({
         action: "track_custom_event",
         eventName: eventName,
-        phoneNumber: phone,
-        userPhone: phone,
+        phoneNumber: cleanPhone,
+        userPhone: cleanPhone,
         eventId: eventId,
+        testEventCode: "TEST44482",
         value: params.value ?? 100.0,
         currency: params.currency || "INR",
         ...attr,
       }),
     });
-    console.log(`[Meta CAPI] Custom event ${eventName} sent to backend CAPI (Event ID: ${eventId})`);
+    const resData = await res.json().catch(() => null);
+    console.log(`[Meta CAPI] Backend response for ${eventName}:`, resData);
+
+    // Notify backend that browser event fired
+    if (win.fbq) {
+      await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "record_browser_conversion",
+          eventId,
+        }),
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error("[Meta CAPI] Error sending custom event to backend:", err);
   }

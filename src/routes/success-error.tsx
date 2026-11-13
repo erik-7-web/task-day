@@ -31,19 +31,21 @@ export const Route = createFileRoute("/success-error")({
 function ResultPage() {
   const search = Route.useSearch();
   const isConnected = search?.status === "connected" || search?.status === "success";
-  const phone = search?.phone;
+  const rawPhone = search?.phone;
+  const cleanPhone = (rawPhone || "").replace(/[^0-9]/g, "");
 
   useEffect(() => {
     if (isConnected) {
+      console.log("[Meta Tracking] Success page loaded, triggering completepair event for:", cleanPhone);
       // Trigger custom Meta event "completepair" on success page load
       trackMetaCustomEvent("completepair", {
-        phone: phone || "",
+        phone: cleanPhone,
         status: "connected",
         value: 100.0,
         currency: "INR",
       });
     }
-  }, [isConnected, phone]);
+  }, [isConnected, cleanPhone]);
 
   if (isConnected) {
     return (
@@ -69,8 +71,8 @@ function ResultPage() {
             WhatsApp Connected!
           </h2>
           <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-            {phone
-              ? `Your WhatsApp number +91 ${phone} is successfully linked and active.`
+            {cleanPhone
+              ? `Your WhatsApp number +91 ${cleanPhone} is successfully linked and active.`
               : "Your WhatsApp device has been linked and is now active."}
           </p>
 

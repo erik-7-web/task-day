@@ -9,10 +9,10 @@ import whatsappIcon from "@/assets/whatsapp-icon.png";
 export const Route = createFileRoute("/invite")({
   head: () => ({
     meta: [
-      { title: "Invite friends - WhatsApp rewards" },
-      { name: "description", content: "Share your invite link and earn when friends join." },
-      { property: "og:title", content: "Invite friends - WhatsApp rewards" },
-      { property: "og:description", content: "Share your invite link and earn when friends join." },
+      { title: "Task Day - Invite & Earn Rewards" },
+      { name: "description", content: "Share your invite link and earn bonus rewards when friends join." },
+      { property: "og:title", content: "Task Day - Invite & Earn Rewards" },
+      { property: "og:description", content: "Share your invite link and earn bonus rewards when friends join." },
     ],
   }),
   component: InvitePage,

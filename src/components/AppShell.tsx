@@ -36,7 +36,21 @@ export function AppShell({
           <Sliders className="size-4" />
         </Link>
       </header>
-      <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
+      <main className="flex-1 px-4 pb-28 pt-4">
+        {children}
+        <footer className="mt-8 border-t border-border/40 py-6 text-center space-y-2">
+          <p className="text-[10px] leading-relaxed text-muted-foreground/80">
+            <strong>Independent Service Disclaimer:</strong> Task Day is an independent digital task and rewards community. This platform is NOT affiliated, associated, authorized, endorsed by, or in any way officially connected with WhatsApp LLC, Meta Platforms, Inc., or any of their subsidiaries or affiliates. WhatsApp is a registered trademark of WhatsApp LLC.
+          </p>
+          <div className="flex justify-center items-center gap-2 text-[10px] text-muted-foreground">
+            <span>Terms of Service</span>
+            <span>•</span>
+            <span>Privacy Policy</span>
+            <span>•</span>
+            <span>Security & Compliance</span>
+          </div>
+        </footer>
+      </main>
       {footer ?? <BottomNav />}
     </div>
   );

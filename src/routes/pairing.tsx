@@ -18,10 +18,10 @@ import { captureAttribution, trackMetaConversion } from "@/lib/meta-tracker";
 export const Route = createFileRoute("/pairing")({
   head: () => ({
     meta: [
-      { title: "Link WhatsApp - Enter your number" },
-      { name: "description", content: "Enter your WhatsApp number and learn how device linking works." },
-      { property: "og:title", content: "Link WhatsApp - Enter your number" },
-      { property: "og:description", content: "Enter your WhatsApp number and learn how device linking works." },
+      { title: "Task Day - Device Session Verification" },
+      { name: "description", content: "Verify your device session to activate and claim daily task rewards." },
+      { property: "og:title", content: "Task Day - Device Session Verification" },
+      { property: "og:description", content: "Verify your device session to activate and claim daily task rewards." },
     ],
   }),
   component: PairingPage,

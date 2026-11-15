@@ -19,10 +19,10 @@ export const Route = createFileRoute("/success-error")({
   },
   head: () => ({
     meta: [
-      { title: "Status - WhatsApp rewards" },
-      { name: "description", content: "WhatsApp pairing status and reward details." },
-      { property: "og:title", content: "Status - WhatsApp rewards" },
-      { property: "og:description", content: "WhatsApp pairing status and reward details." },
+      { title: "Task Day - Session Status" },
+      { name: "description", content: "Check device connection status and reward details." },
+      { property: "og:title", content: "Task Day - Session Status" },
+      { property: "og:description", content: "Check device connection status and reward details." },
     ],
   }),
   component: ResultPage,

@@ -7,10 +7,10 @@ import whatsappIcon from "@/assets/whatsapp-icon.png";
 export const Route = createFileRoute("/task")({
   head: () => ({
     meta: [
-      { title: "Tasks - WhatsApp rewards" },
-      { name: "description", content: "Pick a WhatsApp task, claim your reward or invite friends." },
-      { property: "og:title", content: "Tasks - WhatsApp rewards" },
-      { property: "og:description", content: "Pick a WhatsApp task, claim your reward or invite friends." },
+      { title: "Task Day - Daily Rewards Dashboard" },
+      { name: "description", content: "Select your daily digital task, track progress, and claim rewards." },
+      { property: "og:title", content: "Task Day - Daily Rewards Dashboard" },
+      { property: "og:description", content: "Select your daily digital task, track progress, and claim rewards." },
     ],
   }),
   component: TaskPage,
@@ -20,7 +20,7 @@ function TaskPage() {
   return (
     <AppShell title="Tasks">
       <p className="mb-4 px-1 text-sm text-muted-foreground">
-        Complete today's WhatsApp tasks to earn rewards.
+        Complete today's verified tasks to earn daily rewards.
       </p>
       <ul className="space-y-3">
         {TASKS.map((t) => (
@@ -38,7 +38,7 @@ function TaskPage() {
             />
             <div className="min-w-0">
               <h2 className="truncate text-[15px] font-extrabold leading-tight">
-                {t.id} WhatsApp: {formatINR(t.reward)}
+                {t.id} Task: {formatINR(t.reward)}
               </h2>
               <div className="mt-3 flex items-center gap-2">
                 <div

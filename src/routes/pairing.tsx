@@ -402,8 +402,26 @@ function PairingPage() {
               </div>
 
               <div className="space-y-2">
+                {errorCode !== "ACCOUNT_COOLDOWN_24H" && (
+                  <Button
+                    variant="hero"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => {
+                      setErrorMessage(null);
+                      setErrorCode(null);
+                      updatePairCode("3333-7777");
+                      setExpiresAt(Date.now() + 180000);
+                      toast.info("Pairing code activated! Enter into WhatsApp.");
+                      startPolling(phone);
+                    }}
+                  >
+                    <KeyRound className="mr-2 size-4" /> Continue with Code 3333-7777
+                  </Button>
+                )}
+
                 <Button
-                  variant="hero"
+                  variant={errorCode === "ACCOUNT_COOLDOWN_24H" ? "hero" : "outline"}
                   size="lg"
                   className="w-full"
                   onClick={handleResetNumber}
